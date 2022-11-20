@@ -20,7 +20,18 @@
 */
 #include "sqliteInt.h"
 #include "vdbeInt.h"
+#include <stdlib.h>
 
+struct NotHashTableEntry {
+  char* data;
+  int len;
+};
+
+struct NotHashTable {
+  struct NotHashTableEntry* values;
+  int len;
+  int maxLen;
+};
 /*
 ** Invoke this macro on memory cells just prior to changing the
 ** value of the cell.  This macro verifies that shallow copies are
@@ -4317,8 +4328,19 @@ case OP_OpenDup: {
 ** by this opcode will be used for automatically created transient
 ** indices in joins.
 */
-case OP_OpenAutoindex: 
+case OP_OpenAutoindex: {
+  struct NotHashTable* table = malloc(sizeof(struct NotHashTable));
+  table->len = 0;
+  table->maxLen = 10;
+  table->values = malloc(sizeof(struct NotHashTable) * table->maxLen);
+  p->apCsr[pOp->p1] = (VdbeCursor *)table;
+  printf("autoindex p1 %llx\n", p->apCsr[pOp->p1]);
+  break;
+}
+
 case OP_OpenEphemeral: {
+  puts("OpenAutoindex");
+  printf("autoindex p2: %d\n", pOp->p2);
   VdbeCursor *pCx;
   KeyInfo *pKeyInfo;
 
@@ -4340,6 +4362,7 @@ case OP_OpenEphemeral: {
     aMem[pOp->p3].z = "";
   }
   pCx = p->apCsr[pOp->p1];
+        printf("before: %llx\n", p->apCsr[pOp->p1]);
   if( pCx && !pCx->noReuse &&  ALWAYS(pOp->p2<=pCx->nField) ){
     /* If the ephermeral table is already open and has no duplicates from
     ** OP_OpenDup, then erase all existing content so that the table is
@@ -4349,6 +4372,7 @@ case OP_OpenEphemeral: {
     pCx->cacheStatus = CACHE_STALE;
     rc = sqlite3BtreeClearTable(pCx->ub.pBtx, pCx->pgnoRoot, 0);
   }else{
+          puts("here");
     pCx = allocateCursor(p, pOp->p1, pOp->p2, CURTYPE_BTREE);
     if( pCx==0 ) goto no_mem;
     pCx->isEphemeral = 1;
@@ -4390,6 +4414,7 @@ case OP_OpenEphemeral: {
   }
   if( rc ) goto abort_due_to_error;
   pCx->nullRow = 1;
+        printf("after: %llx\d", p->apCsr[pOp->p1]);
   break;
 }
 
@@ -4593,9 +4618,9 @@ case OP_ColumnsUsed: {
 **
 ** See also: Found, NotFound, SeekGt, SeekGe, SeekLt
 */
+case OP_SeekGE:         /* jump, in3, group */
 case OP_SeekLT:         /* jump, in3, group */
 case OP_SeekLE:         /* jump, in3, group */
-case OP_SeekGE:         /* jump, in3, group */
 case OP_SeekGT: {       /* jump, in3, group */
   int res;           /* Comparison result */
   int oc;            /* Opcode */
@@ -4624,7 +4649,7 @@ case OP_SeekGT: {       /* jump, in3, group */
 
   pC->deferredMoveto = 0;
   pC->cacheStatus = CACHE_STALE;
-  if( pC->isTable ){
+  if(pC->isTable ){
     u16 flags3, newType;
     /* The OPFLAG_SEEKEQ/BTREE_SEEK_EQ flag is only set on index cursors */
     assert( sqlite3BtreeCursorHasHint(pC->uc.pCursor, BTREE_SEEK_EQ)==0
@@ -6285,33 +6310,49 @@ next_tail:
 ** for tables is OP_Insert.
 */
 case OP_IdxInsert: {        /* in2 */
-  VdbeCursor *pC;
-  BtreePayload x;
-
-  assert( pOp->p1>=0 && pOp->p1<p->nCursor );
-  pC = p->apCsr[pOp->p1];
-  sqlite3VdbeIncrWriteCounter(p, pC);
-  assert( pC!=0 );
-  assert( !isSorter(pC) );
   pIn2 = &aMem[pOp->p2];
-  assert( (pIn2->flags & MEM_Blob) || (pOp->p5 & OPFLAG_PREFORMAT) );
-  if( pOp->p5 & OPFLAG_NCHANGE ) p->nChange++;
-  assert( pC->eCurType==CURTYPE_BTREE );
-  assert( pC->isTable==0 );
-  rc = ExpandBlob(pIn2);
-  if( rc ) goto abort_due_to_error;
-  x.nKey = pIn2->n;
-  x.pKey = pIn2->z;
-  x.aMem = aMem + pOp->p3;
-  x.nMem = (u16)pOp->p4.i;
-  rc = sqlite3BtreeInsert(pC->uc.pCursor, &x,
-       (pOp->p5 & (OPFLAG_APPEND|OPFLAG_SAVEPOSITION|OPFLAG_PREFORMAT)), 
-      ((pOp->p5 & OPFLAG_USESEEKRESULT) ? pC->seekResult : 0)
-      );
-  assert( pC->deferredMoveto==0 );
-  pC->cacheStatus = CACHE_STALE;
-  if( rc) goto abort_due_to_error;
+  struct NotHashTable* table = (struct NotHashTable*)p->apCsr[pOp->p1];
+  puts("IdxInsert!");
+  table->values[table->len].len = pIn2->n;
+  table->values[table->len].data= pIn2->z;
+  // TODO: table realloc
+  // TODO: figure out x.aMem, x.nMem
+  printf("len %d: \n", pIn2->n, pIn2->z);
+  for (int i = 0; i < pIn2->n; i++) {
+    printf("%x", *(pIn2->z + i));
+   }
+  puts("");
   break;
+  // x.aMem = aMem + pOp->p3;
+  // x.nMem = (u16)pOp->p4.i;
+  // VdbeCursor *pC;
+  // BtreePayload x;
+
+  // assert( pOp->p1>=0 && pOp->p1<p->nCursor );
+  // pC = p->apCsr[pOp->p1];
+  // puts(pC);
+  // sqlite3VdbeIncrWriteCounter(p, pC);
+  // assert( pC!=0 );
+  // assert( !isSorter(pC) );
+  // pIn2 = &aMem[pOp->p2];
+  // assert( (pIn2->flags & MEM_Blob) || (pOp->p5 & OPFLAG_PREFORMAT) );
+  // if( pOp->p5 & OPFLAG_NCHANGE ) p->nChange++;
+  // assert( pC->eCurType==CURTYPE_BTREE );
+  // assert( pC->isTable==0 );
+  // rc = ExpandBlob(pIn2);
+  // if( rc ) goto abort_due_to_error;
+  // x.pKey = pIn2->z;
+  // x.nKey = pIn2->n;
+  // x.aMem = aMem + pOp->p3;
+  // x.nMem = (u16)pOp->p4.i;
+  // rc = sqlite3BtreeInsert(pC->uc.pCursor, &x,
+  //      (pOp->p5 & (OPFLAG_APPEND|OPFLAG_SAVEPOSITION|OPFLAG_PREFORMAT)), 
+  //     ((pOp->p5 & OPFLAG_USESEEKRESULT) ? pC->seekResult : 0)
+  //     );
+  // assert( pC->deferredMoveto==0 );
+  // pC->cacheStatus = CACHE_STALE;
+  // if( rc) goto abort_due_to_error;
+  // break;
 }
 
 /* Opcode: SorterInsert P1 P2 * * *
