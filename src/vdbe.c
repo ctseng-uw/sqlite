@@ -304,6 +304,10 @@ static VdbeCursor *allocateCursor(
         &pMem->z[ROUND8P(sizeof(VdbeCursor))+2*sizeof(u32)*nField];
     sqlite3BtreeCursorZero(pCx->uc.pCursor);
   }
+
+  if( eCurType==CURTYPE_HASH ){
+    pCx->uc.hashTable = malloc(sizeof(HashTable));
+  }
   return pCx;
 }
 
@@ -4340,56 +4344,59 @@ case OP_OpenEphemeral: {
     aMem[pOp->p3].z = "";
   }
   pCx = p->apCsr[pOp->p1];
-  if( pCx && !pCx->noReuse &&  ALWAYS(pOp->p2<=pCx->nField) ){
-    /* If the ephermeral table is already open and has no duplicates from
-    ** OP_OpenDup, then erase all existing content so that the table is
-    ** empty again, rather than creating a new table. */
-    assert( pCx->isEphemeral );
-    pCx->seqCount = 0;
-    pCx->cacheStatus = CACHE_STALE;
-    rc = sqlite3BtreeClearTable(pCx->ub.pBtx, pCx->pgnoRoot, 0);
-  }else{
-    pCx = allocateCursor(p, pOp->p1, pOp->p2, CURTYPE_BTREE);
-    if( pCx==0 ) goto no_mem;
-    pCx->isEphemeral = 1;
-    rc = sqlite3BtreeOpen(db->pVfs, 0, db, &pCx->ub.pBtx, 
-                          BTREE_OMIT_JOURNAL | BTREE_SINGLE | pOp->p5,
-                          vfsFlags);
-    if( rc==SQLITE_OK ){
-      rc = sqlite3BtreeBeginTrans(pCx->ub.pBtx, 1, 0);
-      if( rc==SQLITE_OK ){
-        /* If a transient index is required, create it by calling
-        ** sqlite3BtreeCreateTable() with the BTREE_BLOBKEY flag before
-        ** opening it. If a transient table is required, just use the
-        ** automatically created table with root-page 1 (an BLOB_INTKEY table).
-        */
-        if( (pCx->pKeyInfo = pKeyInfo = pOp->p4.pKeyInfo)!=0 ){
-          assert( pOp->p4type==P4_KEYINFO );
-          rc = sqlite3BtreeCreateTable(pCx->ub.pBtx, &pCx->pgnoRoot,
-              BTREE_BLOBKEY | pOp->p5); 
-          if( rc==SQLITE_OK ){
-            assert( pCx->pgnoRoot==SCHEMA_ROOT+1 );
-            assert( pKeyInfo->db==db );
-            assert( pKeyInfo->enc==ENC(db) );
-            rc = sqlite3BtreeCursor(pCx->ub.pBtx, pCx->pgnoRoot, BTREE_WRCSR,
-                pKeyInfo, pCx->uc.pCursor);
-          }
-          pCx->isTable = 0;
-        }else{
-          pCx->pgnoRoot = SCHEMA_ROOT;
-          rc = sqlite3BtreeCursor(pCx->ub.pBtx, SCHEMA_ROOT, BTREE_WRCSR,
-              0, pCx->uc.pCursor);
-          pCx->isTable = 1;
-        }
-      }
-      pCx->isOrdered = (pOp->p5!=BTREE_UNORDERED);
-      if( rc ){
-        sqlite3BtreeClose(pCx->ub.pBtx);
-      }
-    }
-  }
-  if( rc ) goto abort_due_to_error;
-  pCx->nullRow = 1;
+  pCx = allocateCursor(p, pOp->p1, pOp->p2, CURTYPE_HASH);
+  pCx->uc.hashTable->pKeyInfo = pOp->p4.pKeyInfo;
+  
+  // if( pCx && !pCx->noReuse &&  ALWAYS(pOp->p2<=pCx->nField) ){
+  //   /* If the ephermeral table is already open and has no duplicates from
+  //   ** OP_OpenDup, then erase all existing content so that the table is
+  //   ** empty again, rather than creating a new table. */
+  //   assert( pCx->isEphemeral );
+  //   pCx->seqCount = 0;
+  //   pCx->cacheStatus = CACHE_STALE;
+  //   rc = sqlite3BtreeClearTable(pCx->ub.pBtx, pCx->pgnoRoot, 0);
+  // }else{
+  //   pCx = allocateCursor(p, pOp->p1, pOp->p2, CURTYPE_BTREE);
+  //   if( pCx==0 ) goto no_mem;
+  //   pCx->isEphemeral = 1;
+  //   rc = sqlite3BtreeOpen(db->pVfs, 0, db, &pCx->ub.pBtx, 
+  //                         BTREE_OMIT_JOURNAL | BTREE_SINGLE | pOp->p5,
+  //                         vfsFlags);
+  //   if( rc==SQLITE_OK ){
+  //     rc = sqlite3BtreeBeginTrans(pCx->ub.pBtx, 1, 0);
+  //     if( rc==SQLITE_OK ){
+  //       /* If a transient index is required, create it by calling
+  //       ** sqlite3BtreeCreateTable() with the BTREE_BLOBKEY flag before
+  //       ** opening it. If a transient table is required, just use the
+  //       ** automatically created table with root-page 1 (an BLOB_INTKEY table).
+  //       */
+  //       if( (pCx->pKeyInfo = pKeyInfo = pOp->p4.pKeyInfo)!=0 ){
+  //         assert( pOp->p4type==P4_KEYINFO );
+  //         rc = sqlite3BtreeCreateTable(pCx->ub.pBtx, &pCx->pgnoRoot,
+  //             BTREE_BLOBKEY | pOp->p5); 
+  //         if( rc==SQLITE_OK ){
+  //           assert( pCx->pgnoRoot==SCHEMA_ROOT+1 );
+  //           assert( pKeyInfo->db==db );
+  //           assert( pKeyInfo->enc==ENC(db) );
+  //           rc = sqlite3BtreeCursor(pCx->ub.pBtx, pCx->pgnoRoot, BTREE_WRCSR,
+  //               pKeyInfo, pCx->uc.pCursor);
+  //         }
+  //         pCx->isTable = 0;
+  //       }else{
+  //         pCx->pgnoRoot = SCHEMA_ROOT;
+  //         rc = sqlite3BtreeCursor(pCx->ub.pBtx, SCHEMA_ROOT, BTREE_WRCSR,
+  //             0, pCx->uc.pCursor);
+  //         pCx->isTable = 1;
+  //       }
+  //     }
+  //     pCx->isOrdered = (pOp->p5!=BTREE_UNORDERED);
+  //     if( rc ){
+  //       sqlite3BtreeClose(pCx->ub.pBtx);
+  //     }
+  //   }
+  // }
+  // if( rc ) goto abort_due_to_error;
+  // pCx->nullRow = 1;
   break;
 }
 
@@ -6286,31 +6293,35 @@ next_tail:
 */
 case OP_IdxInsert: {        /* in2 */
   VdbeCursor *pC;
-  BtreePayload x;
+  // BtreePayload x;
 
   assert( pOp->p1>=0 && pOp->p1<p->nCursor );
-  pC = p->apCsr[pOp->p1];
+  pC = p->apCsr[pOp->p1]; 
   sqlite3VdbeIncrWriteCounter(p, pC);
   assert( pC!=0 );
   assert( !isSorter(pC) );
   pIn2 = &aMem[pOp->p2];
-  assert( (pIn2->flags & MEM_Blob) || (pOp->p5 & OPFLAG_PREFORMAT) );
-  if( pOp->p5 & OPFLAG_NCHANGE ) p->nChange++;
-  assert( pC->eCurType==CURTYPE_BTREE );
-  assert( pC->isTable==0 );
-  rc = ExpandBlob(pIn2);
-  if( rc ) goto abort_due_to_error;
-  x.nKey = pIn2->n;
-  x.pKey = pIn2->z;
-  x.aMem = aMem + pOp->p3;
-  x.nMem = (u16)pOp->p4.i;
-  rc = sqlite3BtreeInsert(pC->uc.pCursor, &x,
-       (pOp->p5 & (OPFLAG_APPEND|OPFLAG_SAVEPOSITION|OPFLAG_PREFORMAT)), 
-      ((pOp->p5 & OPFLAG_USESEEKRESULT) ? pC->seekResult : 0)
-      );
-  assert( pC->deferredMoveto==0 );
-  pC->cacheStatus = CACHE_STALE;
-  if( rc) goto abort_due_to_error;
+  KeyInfo *pKeyInfo =  pC->uc.hashTable->pKeyInfo;
+  UnpackedRecord *pIdxKey = sqlite3VdbeAllocUnpackedRecord(pKeyInfo);
+  sqlite3VdbeRecordUnpack(pKeyInfo, pIn2->n, pIn2->z, pIdxKey);
+
+  // assert( (pIn2->flags & MEM_Blob) || (pOp->p5 & OPFLAG_PREFORMAT) );
+  // if( pOp->p5 & OPFLAG_NCHANGE ) p->nChange++;
+  // assert( pC->eCurType==CURTYPE_BTREE );
+  // assert( pC->isTable==0 );
+  // rc = ExpandBlob(pIn2);
+  // if( rc ) goto abort_due_to_error;
+  // x.nKey = pIn2->n;
+  // x.pKey = pIn2->z;
+  // x.aMem = aMem + pOp->p3;
+  // x.nMem = (u16)pOp->p4.i;
+  // rc = sqlite3BtreeInsert(pC->uc.pCursor, &x,
+  //      (pOp->p5 & (OPFLAG_APPEND|OPFLAG_SAVEPOSITION|OPFLAG_PREFORMAT)), 
+  //     ((pOp->p5 & OPFLAG_USESEEKRESULT) ? pC->seekResult : 0)
+  //     );
+  // assert( pC->deferredMoveto==0 );
+  // pC->cacheStatus = CACHE_STALE;
+  // if( rc) goto abort_due_to_error;
   break;
 }
 

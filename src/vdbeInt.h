@@ -61,6 +61,12 @@ typedef struct AuxData AuxData;
 #define CURTYPE_SORTER      1
 #define CURTYPE_VTAB        2
 #define CURTYPE_PSEUDO      3
+#define CURTYPE_HASH        4
+
+
+typedef struct HashTable {
+   KeyInfo *pKeyInfo;
+} HashTable;
 
 /*
 ** A VdbeCursor is an superclass (a wrapper) for various cursor objects:
@@ -113,6 +119,7 @@ struct VdbeCursor {
     BtCursor *pCursor;          /* CURTYPE_BTREE or _PSEUDO.  Btree cursor */
     sqlite3_vtab_cursor *pVCur; /* CURTYPE_VTAB.              Vtab cursor */
     VdbeSorter *pSorter;        /* CURTYPE_SORTER.            Sorter object */
+    HashTable *hashTable;
   } uc;
   KeyInfo *pKeyInfo;      /* Info about index keys needed by index cursors */
   u32 iHdrOffset;         /* Offset to next unparsed byte of the header */
