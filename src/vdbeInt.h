@@ -92,6 +92,10 @@ struct VdbeCursor {
     Btree *pBtx;            /* Separate file holding temporary table */
     u32 *aAltMap;           /* Mapping from table to index column numbers */
   } ub;
+  union {                 /* pBtx for isEphermeral.  pAltMap otherwise */
+    Hashtable *pHtx;            /* Separate file holding temporary table */
+    u32 *ahAltMap;           /* Mapping from table to index column numbers */
+  } uh;
   i64 seqCount;           /* Sequence counter */
 
   /* Cached OP_Column parse information is only valid if cacheStatus matches
@@ -110,6 +114,7 @@ struct VdbeCursor {
   ** initialized prior to first use. */
   VdbeCursor *pAltCursor; /* Associated index cursor from which to read */
   union {
+    HtCursor *phCursor; 
     BtCursor *pCursor;          /* CURTYPE_BTREE or _PSEUDO.  Btree cursor */
     sqlite3_vtab_cursor *pVCur; /* CURTYPE_VTAB.              Vtab cursor */
     VdbeSorter *pSorter;        /* CURTYPE_SORTER.            Sorter object */

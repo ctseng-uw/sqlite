@@ -1273,6 +1273,7 @@ typedef int VList;
 #include "os.h"
 #include "pager.h"
 #include "btree.h"
+#include "hashtable.h"
 #include "vdbe.h"
 #include "pcache.h"
 #include "mutex.h"
