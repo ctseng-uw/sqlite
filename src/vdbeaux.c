@@ -286,6 +286,46 @@ int sqlite3VdbeAddOp1(Vdbe *p, int op, int p1){
 int sqlite3VdbeAddOp2(Vdbe *p, int op, int p1, int p2){
   return sqlite3VdbeAddOp3(p, op, p1, p2, 0);
 }
+int sqlite3VdbeAddOp6(Vdbe *p, int op, int p1, int p2, int p3, int p6){ // TODO: add p6 value
+  int i;
+  VdbeOp *pOp;
+
+  i = p->nOp;
+  assert( p->eVdbeState==VDBE_INIT_STATE );
+  assert( op>=0 && op<0xff );
+  if( p->nOpAlloc<=i ){
+    return growOp3(p, op, p1, p2, p3);
+  }
+  assert( p->aOp!=0 );
+  p->nOp++;
+  pOp = &p->aOp[i];
+  assert( pOp!=0 );
+  pOp->opcode = (u8)op;
+  pOp->p5 = 0;
+  pOp->p1 = p1;
+  pOp->p2 = p2;
+  pOp->p3 = p3;
+  pOp->p4.p = 0;
+  pOp->p6 = p6;
+  pOp->p4type = P4_NOTUSED;
+#ifdef SQLITE_ENABLE_EXPLAIN_COMMENTS
+  pOp->zComment = 0;
+#endif
+#ifdef SQLITE_DEBUG
+  if( p->db->flags & SQLITE_VdbeAddopTrace ){
+    sqlite3VdbePrintOp(0, i, &p->aOp[i]);
+    test_addop_breakpoint(i, &p->aOp[i]);
+  }
+#endif
+#ifdef VDBE_PROFILE
+  pOp->cycles = 0;
+  pOp->cnt = 0;
+#endif
+#ifdef SQLITE_VDBE_COVERAGE
+  pOp->iSrcLine = 0;
+#endif
+  return i;
+}
 
 /* Generate code for an unconditional jump to instruction iDest
 */
@@ -1153,6 +1193,9 @@ void sqlite3VdbeChangeP3(Vdbe *p, int addr, int val){
 void sqlite3VdbeChangeP5(Vdbe *p, u16 p5){
   assert( p->nOp>0 || p->db->mallocFailed );
   if( p->nOp>0 ) p->aOp[p->nOp-1].p5 = p5;
+}
+void sqlite3VdbeChangeP6(Vdbe *p, int addr, int val){ //TODO: change p6 value
+  sqlite3VdbeGetOp(p,addr)->p6 = val;
 }
 
 /*
