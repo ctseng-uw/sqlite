@@ -94,9 +94,10 @@ struct VdbeCursor {
   } ub;
   union {                 /* pBtx for isEphermeral.  pAltMap otherwise */
     Hashtable *pHtx;            /* Separate file holding temporary table */
-    u32 *ahAltMap;           /* Mapping from table to index column numbers */
+    u32 *ahAltMap;            /* Mapping from table to index column numbers */
   } uh;
   i64 seqCount;           /* Sequence counter */
+  i64 hashTableExist;
 
   /* Cached OP_Column parse information is only valid if cacheStatus matches
   ** Vdbe.cacheCtr.  Vdbe.cacheCtr will never take on the value of

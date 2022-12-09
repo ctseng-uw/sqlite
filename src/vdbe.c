@@ -20,6 +20,7 @@
 */
 #include "sqliteInt.h"
 #include "vdbeInt.h"
+#include "hashtableInt.h"
 
 /*
 ** Invoke this macro on memory cells just prior to changing the
@@ -4618,6 +4619,56 @@ case OP_SeekGT: {       /* jump, in3, group */
   oc = pOp->opcode;
   eqOnly = 0;
   pC->nullRow = 0;
+  // build
+  // if (pC->hashTableExist == 0) {
+  //   pC->hashTableExist = 1;
+  //   BtCursor *temp = pC->ub.pBtx;
+  //   int a;
+  //   sqlite3BtreeFirst(pC->ub.pBtx, &a);
+  //   if (a != 1) {
+  //     // build hash table
+  //     pC->uc.phCursor = malloc(sizeof(HtCursor));
+  //     // pC->uh.pHtx = newHt;
+  //     pC->uc.phCursor->pHashtable = malloc(sizeof(Hashtable));
+  //     pC->uc.phCursor->pKeyInfo = malloc(sizeof(KeyInfo));
+  //     // sqlite3VdbeMemCopy(pC->uc.phCursor->pKeyInfo, pC->uc.pCursor->pKeyInfo);
+  //     sqlite3VdbeMemShallowCopy(pC->uc.phCursor, pC->uc.pCursor, sizeof(KeyInfo));
+  //     // memcpy(pC->uc.phCursor->pKeyInfo, pC->uc.pCursor->pKeyInfo);
+      
+  //     while (pC->ub.pBtx){
+  //           // payload
+  //           // insert addr from btree to hashtable
+  //           sqlite3
+          
+  //     }
+  //   } 
+   
+
+  //   pC->ub.pBtx = temp; // this cursor will be used to do idxGT
+  // }
+  // build hashtable
+   {
+    i64 nCellKey = 0;
+    BtCursor *pCur;
+    Mem m;
+
+    assert( pC->eCurType==CURTYPE_BTREE );
+    pCur = pC->uc.pCursor;
+    assert( sqlite3BtreeCursorIsValid(pCur) );
+    nCellKey = sqlite3BtreePayloadSize(pCur);
+    /* nCellKey will always be between 0 and 0xffffffff because of the way
+    ** that btreeParseCellPtr() and sqlite3GetVarint32() are implemented */
+    if( nCellKey<=0 || nCellKey>0x7fffffff ){
+      rc = SQLITE_CORRUPT_BKPT;
+      goto abort_due_to_error;
+    }
+    sqlite3VdbeMemInit(&m, db, 0);
+    rc = sqlite3VdbeMemFromBtreeZeroOffset(pCur, (u32)nCellKey, &m);
+    if( rc ) goto abort_due_to_error;
+    res = sqlite3VdbeRecordCompareWithSkip(m.n, m.z, &r, 0);
+    sqlite3VdbeMemReleaseMalloc(&m);
+  }
+  
 #ifdef SQLITE_DEBUG
   pC->seekOp = pOp->opcode;
 #endif

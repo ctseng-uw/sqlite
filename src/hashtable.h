@@ -12,3 +12,7 @@ typedef struct Hashtable Hashtable;
 typedef struct HtCursor HtCursor;
 typedef struct HtShared HtShared;
 typedef struct HashtablePayload HashtablePayload;
+
+
+int sqlite3HashTableInsert(BtCursor*, const BtreePayload *pPayload,
+                       int flags, int seekResult);
